@@ -1,12 +1,23 @@
 # FactureChain Backend (MVP)
 
-Lightweight Express API (TypeScript) with in-memory storage covering auth, invoices, certification, and verification flows. Ready to swap the store for PostgreSQL later.
+Lightweight Express API (TypeScript) backed by PostgreSQL. Covers auth, invoices, certification, and verification flows.
 
 ## Quick start
 
 ```bash
 cd backend
 npm install
+```
+
+Create a database and apply the schema:
+
+```bash
+psql $DATABASE_URL -f sql/schema.sql
+```
+
+Run the API:
+
+```bash
 npm run dev
 ```
 
@@ -17,7 +28,7 @@ npm run build
 npm start
 ```
 
-Default port: `4000` (env `PORT`). Seed user: `demo@facturechain.com` / `password123`.
+Seed user (optional): set `SEED_DEMO=true` to auto-create `demo@facturechain.com` / `password123`.
 
 ## Environment variables
 
@@ -25,6 +36,9 @@ Default port: `4000` (env `PORT`). Seed user: `demo@facturechain.com` / `passwor
 - `JWT_SECRET` (default `dev-secret-change-me`)
 - `JWT_EXPIRES_IN` (default `24h`)
 - `APP_URL` (default `https://facturechain.com`)
+- `DATABASE_URL` (required)
+- `DATABASE_SSL` (`true` or `false`, default `false`)
+- `SEED_DEMO` (`true` or `false`, default `false`)
 
 ## API surface
 
@@ -44,7 +58,10 @@ Default port: `4000` (env `PORT`). Seed user: `demo@facturechain.com` / `passwor
 
 ## Architecture notes
 
-- `src/models/store.ts`: in-memory store + demo seed data. Swap with a real DB later.
+- `sql/schema.sql`: Postgres schema for all tables.
+- `src/db/pool.ts`: database connection.
+- `src/db/mapper.ts`: row-to-model mapping and date normalization.
+- `src/db/seed.ts`: optional demo seed.
 - `src/services/*`: business logic (auth, invoices, certification, verification).
 - `src/middleware/*`: auth guard (JWT), rate limits, error handler.
 - `src/routes/*`: HTTP layer with Zod validation and multer for PDF uploads.
@@ -53,7 +70,7 @@ Default port: `4000` (env `PORT`). Seed user: `demo@facturechain.com` / `passwor
 
 ## Next steps for production
 
-- Replace in-memory store with PostgreSQL models (users, invoices, certifications, verification_logs).
+- Add migrations tooling (e.g., Prisma Migrate, Knex, or Flyway).
 - Wire real PDF generation and S3 storage; stream files from `/api/invoices/:id/download`.
 - Call Polygon via `ethers.js` with the provided smart contract, persisting tx hash/block.
 - Add email delivery for password reset flow.

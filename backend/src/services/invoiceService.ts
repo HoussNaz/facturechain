@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
-import { getStore } from "../models/store.js";
+import { pool } from "../db/pool.js";
+import { mapCertification, mapInvoice } from "../db/mapper.js";
 import { hashObject } from "../utils/crypto.js";
 import type { Certification, Invoice, LineItem } from "../types/models.js";
 import type { AppError } from "../types/errors.js";
@@ -32,112 +33,181 @@ type InvoicePayload = {
   notes?: string;
 };
 
-export function listInvoices(userId: string) {
-  return getStore().invoices.filter((invoice) => invoice.userId === userId);
+export async function listInvoices(userId: string) {
+  const result = await pool.query("select * from invoices where user_id = $1 order by created_at desc", [userId]);
+  return result.rows.map(mapInvoice);
 }
 
-export function getInvoice(userId: string, invoiceId: string) {
-  const invoice = getStore().invoices.find((inv) => inv.id === invoiceId && inv.userId === userId);
-  if (!invoice) {
+export async function getInvoice(userId: string, invoiceId: string) {
+  const result = await pool.query("select * from invoices where id = $1 and user_id = $2", [invoiceId, userId]);
+  if (result.rows.length === 0) {
     const err: AppError = new Error("Facture introuvable");
     err.status = 404;
     throw err;
   }
-  return invoice;
+  return mapInvoice(result.rows[0]);
 }
 
-export function createInvoice(userId: string, payload: InvoicePayload) {
+export async function createInvoice(userId: string, payload: InvoicePayload) {
   const now = new Date().toISOString();
   const lineItems = payload.lineItems || [];
   const totals = computeTotals(lineItems);
+  const invoiceNumber = payload.invoiceNumber || `INV-${now.slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 999)}`;
+  const issueDate = payload.issueDate || now.slice(0, 10);
+  const dueDate = payload.dueDate || payload.issueDate || now.slice(0, 10);
 
-  const invoice: Invoice = {
-    id: uuid(),
-    userId,
-    invoiceNumber: payload.invoiceNumber || `INV-${now.slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 999)}`,
-    issueDate: payload.issueDate || now.slice(0, 10),
-    dueDate: payload.dueDate || payload.issueDate || now.slice(0, 10),
-    clientCompanyName: payload.clientCompanyName || null,
-    clientSiret: payload.clientSiret || null,
-    clientAddress: payload.clientAddress || null,
-    clientEmail: payload.clientEmail || null,
-    lineItems,
-    total_ht: totals.total_ht,
-    total_tva: totals.total_tva,
-    total_ttc: totals.total_ttc,
-    notes: payload.notes || null,
-    status: "draft",
-    createdAt: now,
-    updatedAt: now
-  };
+  const result = await pool.query(
+    `insert into invoices (
+       id, user_id, invoice_number, issue_date, due_date,
+       client_company_name, client_siret, client_address, client_email,
+       line_items, total_ht, total_tva, total_ttc, notes, status, created_at, updated_at
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     returning *`,
+    [
+      uuid(),
+      userId,
+      invoiceNumber,
+      issueDate,
+      dueDate,
+      payload.clientCompanyName || null,
+      payload.clientSiret || null,
+      payload.clientAddress || null,
+      payload.clientEmail || null,
+      JSON.stringify(lineItems),
+      totals.total_ht,
+      totals.total_tva,
+      totals.total_ttc,
+      payload.notes || null,
+      "draft",
+      now,
+      now
+    ]
+  );
 
-  getStore().invoices.push(invoice);
-  return invoice;
+  return mapInvoice(result.rows[0]);
 }
 
-export function updateInvoice(userId: string, invoiceId: string, payload: InvoicePayload) {
-  const invoice = getInvoice(userId, invoiceId);
-  const lineItems = payload.lineItems || invoice.lineItems;
+export async function updateInvoice(userId: string, invoiceId: string, payload: InvoicePayload) {
+  const existing = await getInvoice(userId, invoiceId);
+  const lineItems = payload.lineItems || existing.lineItems;
   const totals = computeTotals(lineItems);
 
-  Object.assign(invoice, {
-    invoiceNumber: payload.invoiceNumber || invoice.invoiceNumber,
-    issueDate: payload.issueDate || invoice.issueDate,
-    dueDate: payload.dueDate || invoice.dueDate,
-    clientCompanyName: payload.clientCompanyName ?? invoice.clientCompanyName,
-    clientSiret: payload.clientSiret ?? invoice.clientSiret,
-    clientAddress: payload.clientAddress ?? invoice.clientAddress,
-    clientEmail: payload.clientEmail ?? invoice.clientEmail,
-    lineItems,
-    total_ht: totals.total_ht,
-    total_tva: totals.total_tva,
-    total_ttc: totals.total_ttc,
-    notes: payload.notes ?? invoice.notes,
-    updatedAt: new Date().toISOString()
-  });
+  const result = await pool.query(
+    `update invoices set
+       invoice_number = $1,
+       issue_date = $2,
+       due_date = $3,
+       client_company_name = $4,
+       client_siret = $5,
+       client_address = $6,
+       client_email = $7,
+       line_items = $8,
+       total_ht = $9,
+       total_tva = $10,
+       total_ttc = $11,
+       notes = $12,
+       updated_at = $13
+     where id = $14 and user_id = $15
+     returning *`,
+    [
+      payload.invoiceNumber || existing.invoiceNumber,
+      payload.issueDate || existing.issueDate,
+      payload.dueDate || existing.dueDate,
+      payload.clientCompanyName ?? existing.clientCompanyName,
+      payload.clientSiret ?? existing.clientSiret,
+      payload.clientAddress ?? existing.clientAddress,
+      payload.clientEmail ?? existing.clientEmail,
+      JSON.stringify(lineItems),
+      totals.total_ht,
+      totals.total_tva,
+      totals.total_ttc,
+      payload.notes ?? existing.notes,
+      new Date().toISOString(),
+      invoiceId,
+      userId
+    ]
+  );
 
-  return invoice;
-}
-
-export function deleteInvoice(userId: string, invoiceId: string) {
-  const { invoices, certifications } = getStore();
-  const index = invoices.findIndex((inv) => inv.id === invoiceId && inv.userId === userId);
-  if (index === -1) {
+  if (result.rows.length === 0) {
     const err: AppError = new Error("Facture introuvable");
     err.status = 404;
     throw err;
   }
-  const [removed] = invoices.splice(index, 1);
-  for (let i = certifications.length - 1; i >= 0; i -= 1) {
-    if (certifications[i].invoiceId === invoiceId) {
-      certifications.splice(i, 1);
-    }
-  }
-  return removed;
+
+  return mapInvoice(result.rows[0]);
 }
 
-export function certifyInvoice(userId: string, invoiceId: string) {
-  const { certifications } = getStore();
-  const invoice = getInvoice(userId, invoiceId);
-  const existing = certifications.find((c) => c.invoiceId === invoiceId);
-  if (existing) return { invoice, certification: existing };
+export async function deleteInvoice(userId: string, invoiceId: string) {
+  await pool.query("delete from certifications where invoice_id = $1", [invoiceId]);
+  const result = await pool.query("delete from invoices where id = $1 and user_id = $2 returning id", [invoiceId, userId]);
+  if (result.rows.length === 0) {
+    const err: AppError = new Error("Facture introuvable");
+    err.status = 404;
+    throw err;
+  }
+  return { id: result.rows[0].id as string };
+}
 
-  const pdfHash = `0x${hashObject(invoice)}`;
-  const certification: Certification = {
-    id: uuid(),
-    invoiceId,
-    pdfHash,
-    blockchainTxId: randomHex(64),
-    blockchainNetwork: "polygon",
-    blockNumber: 52000000 + Math.floor(Math.random() * 100000),
-    certifiedAt: new Date().toISOString(),
-    pdfUrl: null,
-    verificationCount: 0,
-    createdAt: new Date().toISOString()
-  };
+export async function certifyInvoice(userId: string, invoiceId: string) {
+  const invoice = await getInvoice(userId, invoiceId);
+  const existing = await pool.query("select * from certifications where invoice_id = $1", [invoiceId]);
+  if (existing.rows.length > 0) {
+    return { invoice, certification: mapCertification(existing.rows[0]) };
+  }
 
-  invoice.status = "certified";
-  invoice.updatedAt = certification.certifiedAt;
-  certifications.push(certification);
-  return { invoice, certification };
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const pdfHash = `0x${hashObject(invoice)}`;
+    const certifiedAt = new Date().toISOString();
+
+    const certResult = await client.query(
+      `insert into certifications (
+         id, invoice_id, pdf_hash, blockchain_tx_id, blockchain_network,
+         block_number, certified_at, pdf_url, verification_count, created_at
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       returning *`,
+      [
+        uuid(),
+        invoiceId,
+        pdfHash,
+        randomHex(64),
+        "polygon",
+        52000000 + Math.floor(Math.random() * 100000),
+        certifiedAt,
+        null,
+        0,
+        certifiedAt
+      ]
+    );
+
+    const invoiceResult = await client.query(
+      "update invoices set status = $1, updated_at = $2 where id = $3 and user_id = $4 returning *",
+      ["certified", certifiedAt, invoiceId, userId]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      invoice: mapInvoice(invoiceResult.rows[0]),
+      certification: mapCertification(certResult.rows[0])
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listCertificationsByInvoiceIds(ids: string[]) {
+  if (ids.length === 0) return [] as Certification[];
+  const result = await pool.query("select * from certifications where invoice_id = any($1::uuid[])", [ids]);
+  return result.rows.map(mapCertification);
+}
+
+export async function getCertificationByInvoiceId(invoiceId: string) {
+  const result = await pool.query("select * from certifications where invoice_id = $1", [invoiceId]);
+  if (result.rows.length === 0) return null;
+  return mapCertification(result.rows[0]);
 }

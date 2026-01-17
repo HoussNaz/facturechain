@@ -3,14 +3,18 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env.js";
-import { seedDemoData } from "./models/store.js";
+import { seedDemoData } from "./db/seed.js";
 import authRoutes from "./routes/auth.js";
 import invoiceRoutes from "./routes/invoices.js";
 import verifyRoutes from "./routes/verify.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
-seedDemoData();
+if (env.seedDemo) {
+  seedDemoData().catch((error) => {
+    console.error("Failed to seed demo data", error);
+  });
+}
 
 const app = express();
 app.use(cors());

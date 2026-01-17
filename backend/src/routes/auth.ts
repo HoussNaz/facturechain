@@ -43,7 +43,7 @@ router.post("/forgot-password", authLimiter, async (req, res, next) => {
   try {
     const schema = z.object({ email: z.string().email() });
     const payload = schema.parse(req.body);
-    const result = startResetPassword(payload.email);
+    const result = await startResetPassword(payload.email);
     return ok(res, { message: "Si le compte existe, un email est envoye", ...result });
   } catch (error) {
     next(error);

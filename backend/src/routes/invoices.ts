@@ -6,11 +6,12 @@ import {
   certifyInvoice,
   createInvoice,
   deleteInvoice,
+  getCertificationByInvoiceId,
   getInvoice,
+  listCertificationsByInvoiceIds,
   listInvoices,
   updateInvoice
 } from "../services/invoiceService.js";
-import { getStore } from "../models/store.js";
 import type { User } from "../types/models.js";
 
 const router = Router();
@@ -36,64 +37,69 @@ const invoiceSchema = z.object({
 
 router.use(authRequired);
 
-router.get("/", (req, res) => {
-  const user = req.user as User;
-  const invoices = listInvoices(user.id);
-  const { certifications } = getStore();
-  const enriched = invoices.map((inv) => ({
-    ...inv,
-    certification: certifications.find((c) => c.invoiceId === inv.id) || null
-  }));
-  return ok(res, { invoices: enriched });
+router.get("/", async (req, res, next) => {
+  try {
+    const user = req.user as User;
+    const invoices = await listInvoices(user.id);
+    const certifications = await listCertificationsByInvoiceIds(invoices.map((inv) => inv.id));
+    const certMap = new Map(certifications.map((cert) => [cert.invoiceId, cert]));
+    const enriched = invoices.map((inv) => ({
+      ...inv,
+      certification: certMap.get(inv.id) || null
+    }));
+    return ok(res, { invoices: enriched });
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.post("/", (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
     const user = req.user as User;
     const payload = invoiceSchema.parse(req.body);
-    const invoice = createInvoice(user.id, payload);
+    const invoice = await createInvoice(user.id, payload);
     return created(res, { invoice });
   } catch (error) {
     next(error);
   }
 });
 
-router.get("/:id", (req, res, next) => {
+router.get("/:id", async (req, res, next) => {
   try {
     const user = req.user as User;
-    const invoice = getInvoice(user.id, req.params.id);
-    const certification = getStore().certifications.find((c) => c.invoiceId === invoice.id) || null;
+    const invoice = await getInvoice(user.id, req.params.id);
+    const certification = await getCertificationByInvoiceId(invoice.id);
     return ok(res, { invoice, certification });
   } catch (error) {
     next(error);
   }
 });
 
-router.put("/:id", (req, res, next) => {
+router.put("/:id", async (req, res, next) => {
   try {
     const user = req.user as User;
     const payload = invoiceSchema.parse(req.body);
-    const invoice = updateInvoice(user.id, req.params.id, payload);
+    const invoice = await updateInvoice(user.id, req.params.id, payload);
     return ok(res, { invoice });
   } catch (error) {
     next(error);
   }
 });
 
-router.delete("/:id", (req, res, next) => {
+router.delete("/:id", async (req, res, next) => {
   try {
     const user = req.user as User;
-    const invoice = deleteInvoice(user.id, req.params.id);
+    const invoice = await deleteInvoice(user.id, req.params.id);
     return ok(res, { deleted: invoice.id });
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/:id/certify", (req, res, next) => {
+router.post("/:id/certify", async (req, res, next) => {
   try {
     const user = req.user as User;
-    const result = certifyInvoice(user.id, req.params.id);
+    const result = await certifyInvoice(user.id, req.params.id);
     return ok(res, result);
   } catch (error) {
     next(error);

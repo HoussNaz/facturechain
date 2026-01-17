@@ -1,11 +1,11 @@
 # FactureChain MVP
 
-Blockchain invoice verification system with a modern React UI and a TypeScript Express API. Create invoices, generate a PDF preview, anchor hashes on-chain (mocked in MVP), and verify publicly by hash or PDF upload.
+Blockchain invoice verification system with a modern React UI and a TypeScript Express API backed by PostgreSQL. Create invoices, generate a PDF preview, anchor hashes (mocked in MVP), and verify publicly by hash or PDF upload.
 
 ## Repository layout
 
 - `frontend/` React 18 + TypeScript + Tailwind UI
-- `backend/` Express API in TypeScript
+- `backend/` Express API in TypeScript (Postgres)
 
 ## Key features
 
@@ -23,7 +23,14 @@ Blockchain invoice verification system with a modern React UI and a TypeScript E
 ```bash
 cd backend
 npm install
+psql $DATABASE_URL -f sql/schema.sql
 npm run dev
+```
+
+Optional seed data:
+
+```
+SEED_DEMO=true npm run dev
 ```
 
 Seed user: `demo@facturechain.com` / `password123`
@@ -46,24 +53,26 @@ Frontend (`frontend/.env`):
 VITE_API_URL=http://localhost:4000
 ```
 
-Backend (`backend/.env` optional):
+Backend (`backend/.env`):
 
 ```
+DATABASE_URL=postgres://user:pass@localhost:5432/facturechain
+DATABASE_SSL=false
 PORT=4000
 JWT_SECRET=dev-secret-change-me
 JWT_EXPIRES_IN=24h
 APP_URL=https://facturechain.com
+SEED_DEMO=true
 ```
 
 ## Notes
 
-- The backend uses an in-memory store in this MVP. Swap to Postgres for production.
 - PDF exports and verification receipts are generated client-side.
 - Blockchain certification is mocked (ready to replace with Polygon + ethers.js).
 
 ## Next steps
 
-- Plug Postgres models into `backend/src/models/store.ts`
+- Add migrations (Prisma/Knex/Flyway)
 - Add real PDF generation and S3 storage
 - Add Polygon contract interactions
 - Add issuer registry and revocation

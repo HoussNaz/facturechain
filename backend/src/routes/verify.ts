@@ -6,16 +6,24 @@ import { verifyByHash, verifyUploadedBuffer } from "../services/verificationServ
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-router.get("/:hash", (req, res) => {
-  const hash = req.params.hash;
-  const result = verifyByHash(hash, "hash", req.ip || "");
-  return ok(res, result);
+router.get("/:hash", async (req, res, next) => {
+  try {
+    const hash = req.params.hash;
+    const result = await verifyByHash(hash, "hash", req.ip || "");
+    return ok(res, result);
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.post("/upload", upload.single("file"), (req, res) => {
-  if (!req.file) return badRequest(res, "Aucun fichier");
-  const result = verifyUploadedBuffer(req.file.buffer, req.ip || "");
-  return ok(res, result);
+router.post("/upload", upload.single("file"), async (req, res, next) => {
+  try {
+    if (!req.file) return badRequest(res, "Aucun fichier");
+    const result = await verifyUploadedBuffer(req.file.buffer, req.ip || "");
+    return ok(res, result);
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;
