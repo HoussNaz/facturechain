@@ -93,6 +93,18 @@ export default function InvoiceDetail() {
     }
   };
 
+  const handleMarkAsPaid = async () => {
+    if (!token || !id) return;
+    setActionMessage(null);
+    try {
+      await apiFetch(`/api/invoices/${id}/pay`, { method: "POST", token });
+      setInvoice((prev) => prev ? { ...prev, status: "paid" } : null);
+      setActionMessage("Facture marquée comme payée");
+    } catch (err: any) {
+      setActionMessage(err?.message || "Action impossible");
+    }
+  };
+
   const handleCopyVerificationUrl = () => {
     if (!certification?.pdfHash) return;
     const url = `${window.location.origin}/verify/${certification.pdfHash}`;
@@ -144,6 +156,15 @@ export default function InvoiceDetail() {
               Certifier
             </button>
           )}
+          {invoice?.status !== "paid" && (
+            <button
+              className="rounded-full bg-blue-600 px-5 py-3 text-sm text-white transition-colors hover:bg-blue-700"
+              type="button"
+              onClick={handleMarkAsPaid}
+            >
+              Marquer payée
+            </button>
+          )}
         </div>
       </div>
 
@@ -187,7 +208,7 @@ export default function InvoiceDetail() {
                 caption={certification ? "Ancre sur Polygon" : "Brouillon non certifie"}
               />
               <div className="space-y-1">
-                <StatusPill label={invoice?.status === "certified" ? "Certifie" : "Brouillon"} tone={invoice?.status === "certified" ? "certified" : "pending"} />
+                <StatusPill label={invoice?.status === "certified" ? "Certifie" : (invoice?.status === "paid" ? "Payée" : "Brouillon")} tone={invoice?.status as any} />
                 {certification ? (
                   <>
                     <p>Hash: {certification.pdfHash.slice(0, 12)}...</p>

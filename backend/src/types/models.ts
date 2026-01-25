@@ -18,7 +18,7 @@ export type User = {
 
 export type PublicUser = Omit<User, "passwordHash">;
 
-export type InvoiceStatus = "draft" | "certified";
+export type InvoiceStatus = "draft" | "certified" | "paid";
 
 export type Invoice = {
   id: string;

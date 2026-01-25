@@ -10,7 +10,9 @@ import {
   getInvoice,
   listCertificationsByInvoiceIds,
   listInvoices,
-  updateInvoice
+  updateInvoice,
+  markInvoiceAsPaid,
+  getInvoiceStats
 } from "../services/invoiceService.js";
 import type { User } from "../types/models.js";
 
@@ -36,6 +38,16 @@ const invoiceSchema = z.object({
 });
 
 router.use(authRequired);
+
+router.get("/stats", async (req, res, next) => {
+  try {
+    const user = req.user as User;
+    const stats = await getInvoiceStats(user.id);
+    return ok(res, stats);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/", async (req, res, next) => {
   try {
@@ -115,6 +127,16 @@ router.post("/:id/certify", async (req, res, next) => {
     const user = req.user as User;
     const result = await certifyInvoice(user.id, req.params.id);
     return ok(res, result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/pay", async (req, res, next) => {
+  try {
+    const user = req.user as User;
+    const invoice = await markInvoiceAsPaid(user.id, req.params.id);
+    return ok(res, { invoice });
   } catch (error) {
     next(error);
   }

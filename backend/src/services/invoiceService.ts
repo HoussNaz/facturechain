@@ -4,6 +4,7 @@ import { mapCertification, mapInvoice } from "../db/mapper.js";
 import { hashObject } from "../utils/crypto.js";
 import type { Certification, Invoice, LineItem } from "../types/models.js";
 import type { AppError } from "../types/errors.js";
+import { anchorHash } from "./blockchainService.js";
 
 const computeTotals = (lineItems: LineItem[] = []) => {
   const total_ht = lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
@@ -199,8 +200,27 @@ export async function certifyInvoice(userId: string, invoiceId: string) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // 1. Calculate Hash
     const pdfHash = `0x${hashObject(invoice)}`;
     const certifiedAt = new Date().toISOString();
+
+    // 2. Anchor to Blockchain (Real or Mock based on Env)
+    // Note: We do this inside the DB transaction block, but if it fails we rollback DB.
+    // Ideally we might want to do it before BEGIN to avoid locking DB rows for long time,
+    // but here we are not locking 'certifications' table yet, only reading.
+    // However, locking 'invoices' row might happen if we were updating it. We are reading it above.
+    // Let's call anchorHash.
+
+    let blockchainReceipt;
+    try {
+      blockchainReceipt = await anchorHash(pdfHash);
+    } catch (bcError) {
+      // If blockchain fails, we abort the whole process
+      throw bcError;
+    }
+
+    const { txId, blockNumber, network } = blockchainReceipt;
 
     const certResult = await client.query(
       `insert into certifications (
@@ -212,11 +232,11 @@ export async function certifyInvoice(userId: string, invoiceId: string) {
         uuid(),
         invoiceId,
         pdfHash,
-        randomHex(64),
-        "polygon",
-        52000000 + Math.floor(Math.random() * 100000),
+        txId,
+        network,
+        blockNumber,
         certifiedAt,
-        null,
+        null, // pdf_url is pending implementation (could be IPFS)
         0,
         certifiedAt
       ]
@@ -247,8 +267,46 @@ export async function listCertificationsByInvoiceIds(ids: string[]) {
   return result.rows.map(mapCertification);
 }
 
+
 export async function getCertificationByInvoiceId(invoiceId: string) {
   const result = await pool.query("select * from certifications where invoice_id = $1", [invoiceId]);
   if (result.rows.length === 0) return null;
   return mapCertification(result.rows[0]);
+}
+
+export async function markInvoiceAsPaid(userId: string, invoiceId: string) {
+  const result = await pool.query(
+    "update invoices set status = $1, updated_at = $2 where id = $3 and user_id = $4 returning *",
+    ["paid", new Date().toISOString(), invoiceId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    const err: AppError = new Error("Facture introuvable");
+    err.status = 404;
+    throw err;
+  }
+  return mapInvoice(result.rows[0]);
+}
+
+export async function getInvoiceStats(userId: string) {
+  const result = await pool.query(
+    `SELECT
+       COUNT(*) as total_count,
+       COUNT(*) FILTER (WHERE status = 'certified') as certified_count,
+       COUNT(*) FILTER (WHERE status = 'paid') as paid_count,
+       COALESCE(SUM(total_ttc) FILTER (WHERE status = 'paid'), 0) as total_revenue,
+       COALESCE(SUM(total_ttc) FILTER (WHERE status != 'paid'), 0) as pending_revenue
+     FROM invoices
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  const row = result.rows[0];
+  return {
+    totalCount: parseInt(row.total_count, 10),
+    certifiedCount: parseInt(row.certified_count, 10),
+    paidCount: parseInt(row.paid_count, 10),
+    totalRevenue: parseFloat(row.total_revenue),
+    pendingRevenue: parseFloat(row.pending_revenue)
+  };
 }

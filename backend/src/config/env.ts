@@ -30,6 +30,12 @@ export const env = {
   corsOrigins: process.env.CORS_ORIGINS?.split(",") || ["http://localhost:3000", "http://localhost:5173"],
   databaseUrl: process.env.DATABASE_URL || "",
   databaseSsl: boolFromEnv(process.env.DATABASE_SSL, false),
-  seedDemo: boolFromEnv(process.env.SEED_DEMO, false)
+  seedDemo: boolFromEnv(process.env.SEED_DEMO, false),
+  blockchain: {
+    enabled: boolFromEnv(process.env.BLOCKCHAIN_ENABLED, false),
+    rpcUrl: process.env.BLOCKCHAIN_RPC_URL || "https://rpc.ankr.com/polygon_amoy", // Amoy Testnet
+    privateKey: process.env.BLOCKCHAIN_PRIVATE_KEY || "", // Use hex string
+    contractAddress: process.env.BLOCKCHAIN_CONTRACT_ADDRESS || ""
+  }
 };
 

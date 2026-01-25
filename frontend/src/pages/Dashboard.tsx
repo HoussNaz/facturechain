@@ -38,6 +38,24 @@ export default function Dashboard() {
     return () => clearTimeout(timeout);
   }, [searchQuery]);
 
+  const [stats, setStats] = useState({
+    totalCount: 0,
+    certifiedCount: 0,
+    paidCount: 0,
+    totalRevenue: 0,
+    pendingRevenue: 0
+  });
+
+  const loadStats = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<{ totalCount: number, certifiedCount: number, paidCount: number, totalRevenue: number, pendingRevenue: number }>("/api/invoices/stats", { token });
+      setStats(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [token]);
+
   const loadInvoices = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -64,19 +82,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadInvoices();
-  }, [loadInvoices]);
-
-  const metrics = useMemo(() => {
-    const certified = invoices.filter((inv) => inv.status === "certified").length;
-    const verifications = invoices.reduce((sum, inv) => sum + (inv.certification?.verificationCount || 0), 0);
-    return { certified, verifications };
-  }, [invoices]);
+    loadStats();
+  }, [loadInvoices, loadStats]);
 
   const handleDelete = async (invoiceId: string) => {
+    if (!invoiceId) return;
     if (!confirm("Êtes-vous sûr de vouloir supprimer cette facture ?")) return;
     try {
       await apiFetch(`/api/invoices/${invoiceId}`, { method: "DELETE", token });
       loadInvoices();
+      loadStats();
     } catch (err: any) {
       setError(err?.message || "Impossible de supprimer la facture");
     }
@@ -86,6 +101,7 @@ export default function Dashboard() {
     try {
       await apiFetch(`/api/invoices/${invoiceId}/duplicate`, { method: "POST", token });
       loadInvoices();
+      loadStats();
     } catch (err: any) {
       setError(err?.message || "Impossible de dupliquer la facture");
     }
@@ -100,7 +116,7 @@ export default function Dashboard() {
       inv.clientCompanyName || "",
       inv.total_ht?.toFixed(2) || "0",
       inv.total_ttc?.toFixed(2) || "0",
-      inv.status === "certified" ? "Certifié" : "Brouillon",
+      inv.status,
       inv.createdAt?.slice(0, 10) || ""
     ]);
 
@@ -154,18 +170,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
+      <div className="mt-8 grid gap-4 md:grid-cols-4">
         <div className="rounded-2xl bg-white/80 p-5 shadow-sm backdrop-blur">
-          <p className="text-sm text-slate-500">Factures certifiées</p>
-          <p className="mt-2 text-2xl font-semibold text-brand-900">{metrics.certified}</p>
+          <p className="text-sm text-slate-500">Chiffre d'Affaires</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-600">{formatCurrency(stats.totalRevenue)}</p>
         </div>
         <div className="rounded-2xl bg-white/80 p-5 shadow-sm backdrop-blur">
-          <p className="text-sm text-slate-500">Vérifications publiques</p>
-          <p className="mt-2 text-2xl font-semibold text-brand-900">{metrics.verifications}</p>
+          <p className="text-sm text-slate-500">En attente</p>
+          <p className="mt-2 text-2xl font-semibold text-brand-900">{formatCurrency(stats.pendingRevenue)}</p>
         </div>
         <div className="rounded-2xl bg-white/80 p-5 shadow-sm backdrop-blur">
-          <p className="text-sm text-slate-500">Factures totales</p>
-          <p className="mt-2 text-2xl font-semibold text-brand-900">{pagination?.total || invoices.length}</p>
+          <p className="text-sm text-slate-500">Factures payées</p>
+          <p className="mt-2 text-2xl font-semibold text-brand-900">{stats.paidCount} / {stats.totalCount}</p>
+        </div>
+        <div className="rounded-2xl bg-white/80 p-5 shadow-sm backdrop-blur">
+          <p className="text-sm text-slate-500">Certifiées</p>
+          <p className="mt-2 text-2xl font-semibold text-brand-900">{stats.certifiedCount}</p>
         </div>
       </div>
 
@@ -238,8 +258,8 @@ export default function Dashboard() {
                 <td className="px-6 py-4">{formatCurrency(invoice.total_ttc)}</td>
                 <td className="px-6 py-4">
                   <StatusPill
-                    label={invoice.status === "certified" ? t("statusCertified") : t("statusPending")}
-                    tone={invoice.status === "certified" ? "certified" : "pending"}
+                    label={invoice.status === "certified" ? t("statusCertified") : (invoice.status === "paid" ? "Payée" : t("statusPending"))}
+                    tone={invoice.status as any}
                   />
                 </td>
                 <td className="px-6 py-4 text-slate-500">{invoice.updatedAt?.slice(0, 10)}</td>

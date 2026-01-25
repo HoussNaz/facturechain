@@ -64,6 +64,14 @@ export type VerifyResponse = {
   hash?: string;
 };
 
+export type InvoiceStats = {
+  totalCount: number;
+  certifiedCount: number;
+  paidCount: number;
+  totalRevenue: number;
+  pendingRevenue: number;
+};
+
 export type AuthResponse = {
   token: string;
   user: User;

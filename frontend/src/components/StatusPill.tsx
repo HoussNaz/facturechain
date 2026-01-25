@@ -3,6 +3,7 @@ const styles: Record<string, string> = {
   pending: "bg-slate-100 text-slate-600",
   certified: "bg-emerald-100 text-emerald-700",
   verified: "bg-emerald-100 text-emerald-700",
+  paid: "bg-blue-100 text-blue-700",
   error: "bg-rose-100 text-rose-700"
 };
 
