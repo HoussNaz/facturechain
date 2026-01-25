@@ -20,15 +20,15 @@ export default function EditInvoice() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { t } = useI18n();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
 
     const [invoiceNumber, setInvoiceNumber] = useState("");
     const [issueDate, setIssueDate] = useState("");
     const [dueDate, setDueDate] = useState("");
-    const [issuerName, setIssuerName] = useState("");
-    const [issuerSiret, setIssuerSiret] = useState("");
-    const [issuerEmail, setIssuerEmail] = useState("");
-    const [issuerAddress, setIssuerAddress] = useState("");
+    const [issuerName, setIssuerName] = useState(user?.companyName || "");
+    const [issuerSiret, setIssuerSiret] = useState(user?.siret || "");
+    const [issuerEmail, setIssuerEmail] = useState(user?.email || "");
+    const [issuerAddress, setIssuerAddress] = useState(user?.address || "");
     const [clientCompanyName, setClientCompanyName] = useState("");
     const [clientSiret, setClientSiret] = useState("");
     const [clientEmail, setClientEmail] = useState("");
@@ -488,6 +488,8 @@ export default function EditInvoice() {
                     lineItems={items}
                     notes={notes}
                     totals={totals}
+                    isCertified={!!certification} // Use '!!certification' instead of 'isCertified' because 'isCertified' state might be true even if 'certification' object isn't fully loaded/populated in some edge cases or just to be safe, but actually 'certification' object is what we need for the hash. EditInvoice sets certification on load.
+                    certificationHash={certification?.pdfHash}
                 />
             </div>
         </div>

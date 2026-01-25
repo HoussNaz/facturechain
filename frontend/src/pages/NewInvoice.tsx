@@ -17,15 +17,15 @@ const emptyItem: LineItem = {
 
 export default function NewInvoice() {
   const { t } = useI18n();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [issueDate, setIssueDate] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [issuerName, setIssuerName] = useState("");
-  const [issuerSiret, setIssuerSiret] = useState("");
-  const [issuerEmail, setIssuerEmail] = useState("");
-  const [issuerAddress, setIssuerAddress] = useState("");
+  const [issuerName, setIssuerName] = useState(user?.companyName || "");
+  const [issuerSiret, setIssuerSiret] = useState(user?.siret || "");
+  const [issuerEmail, setIssuerEmail] = useState(user?.email || "");
+  const [issuerAddress, setIssuerAddress] = useState(user?.address || "");
   const [clientCompanyName, setClientCompanyName] = useState("");
   const [clientSiret, setClientSiret] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -283,6 +283,8 @@ export default function NewInvoice() {
           lineItems={items}
           notes={notes}
           totals={totals}
+          isCertified={!!certification}
+          certificationHash={certification?.pdfHash}
         />
       </div>
     </div>

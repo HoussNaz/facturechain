@@ -1,26 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import QRCode from "qrcode";
 import type { LineItem } from "../api/types";
-
-const STORAGE_KEY = "facturechain.pdf.layout";
-
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-type Block = {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
-
-type DragState = {
-  id: string;
-  offsetX: number;
-  offsetY: number;
-} | null;
 
 type PdfStudioProps = {
   invoiceNumber: string;
@@ -31,93 +13,69 @@ type PdfStudioProps = {
   lineItems: LineItem[];
   notes: string;
   totals: { ht: number; tva: number; ttc: number };
+  isCertified?: boolean;
+  certificationHash?: string;
 };
 
-const defaultBlocks: Block[] = [
-  { id: "header", label: "En-tete", x: 6, y: 4, w: 88, h: 10 },
-  { id: "issuer", label: "Emetteur", x: 6, y: 16, w: 42, h: 16 },
-  { id: "client", label: "Client", x: 52, y: 16, w: 42, h: 16 },
-  { id: "items", label: "Lignes", x: 6, y: 34, w: 88, h: 34 },
-  { id: "totals", label: "Totaux", x: 60, y: 70, w: 34, h: 12 },
-  { id: "notes", label: "Notes", x: 6, y: 70, w: 50, h: 12 },
-  { id: "qr", label: "QR", x: 6, y: 84, w: 18, h: 10 }
-];
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(amount);
 
-const loadLayout = () => {
-  if (typeof window === "undefined") return defaultBlocks;
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return "--";
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultBlocks;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return defaultBlocks;
-    return parsed as Block[];
+    return new Date(dateStr).toLocaleDateString("fr-FR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
   } catch {
-    return defaultBlocks;
+    return dateStr;
   }
 };
 
 export default function PdfStudio(props: PdfStudioProps) {
-  const boardRef = useRef<HTMLDivElement | null>(null);
-  const [blocks, setBlocks] = useState<Block[]>(() => loadLayout());
-  const [drag, setDrag] = useState<DragState>(null);
-  const [showGrid, setShowGrid] = useState(true);
-  const [snap, setSnap] = useState(true);
+  const pdfRef = useRef<HTMLDivElement | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [previewMode, setPreviewMode] = useState<"a4" | "compact">("a4");
 
+  // Generate QR code with invoice verification data
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(blocks));
-  }, [blocks]);
+    const generateQR = async () => {
+      const verificationData = JSON.stringify({
+        invoice: props.invoiceNumber || "DRAFT",
+        issuer: props.issuer.siret || "N/A",
+        total: props.totals.ttc,
+        date: props.issueDate,
+        hash: props.certificationHash || null
+      });
 
-  const itemsPreview = useMemo(() => props.lineItems.slice(0, 6), [props.lineItems]);
-
-  const updateBlock = (id: string, update: Partial<Block>) => {
-    setBlocks((prev) => prev.map((block) => (block.id === id ? { ...block, ...update } : block)));
-  };
-
-  const handlePointerDown = (id: string, event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const target = event.currentTarget;
-    const blockRect = target.getBoundingClientRect();
-    setDrag({
-      id,
-      offsetX: event.clientX - blockRect.left,
-      offsetY: event.clientY - blockRect.top
-    });
-  };
-
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag || !boardRef.current) return;
-    const boardRect = boardRef.current.getBoundingClientRect();
-    const block = blocks.find((b) => b.id === drag.id);
-    if (!block) return;
-
-    const nextX = ((event.clientX - boardRect.left - drag.offsetX) / boardRect.width) * 100;
-    const nextY = ((event.clientY - boardRect.top - drag.offsetY) / boardRect.height) * 100;
-    const snappedX = snap ? Math.round(nextX / 2) * 2 : nextX;
-    const snappedY = snap ? Math.round(nextY / 2) * 2 : nextY;
-
-    updateBlock(drag.id, {
-      x: clamp(snappedX, 0, 100 - block.w),
-      y: clamp(snappedY, 0, 100 - block.h)
-    });
-  };
-
-  const handlePointerUp = () => {
-    if (drag) setDrag(null);
-  };
-
-  const handleReset = () => {
-    setBlocks(defaultBlocks);
-  };
+      try {
+        const url = await QRCode.toDataURL(verificationData, {
+          width: 120,
+          margin: 0,
+          color: {
+            dark: "#1e3a5f",
+            light: "#ffffff"
+          }
+        });
+        setQrDataUrl(url);
+      } catch (err) {
+        console.error("QR generation failed:", err);
+      }
+    };
+    generateQR();
+  }, [props.invoiceNumber, props.issuer.siret, props.totals.ttc, props.issueDate, props.certificationHash]);
 
   const handleDownload = async () => {
-    if (!boardRef.current) return;
+    if (!pdfRef.current) return;
     setDownloading(true);
     try {
-      const canvas = await html2canvas(boardRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff"
+      const canvas = await html2canvas(pdfRef.current, {
+        scale: 3,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
@@ -131,119 +89,261 @@ export default function PdfStudio(props: PdfStudioProps) {
     }
   };
 
+  const statusBadge = props.isCertified ? (
+    <div className="pdf-status-badge pdf-status-certified">
+      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+      </svg>
+      <span>Certifiée</span>
+    </div>
+  ) : (
+    <div className="pdf-status-badge pdf-status-draft">
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+      <span>Brouillon</span>
+    </div>
+  );
+
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-brand-900">PDF Studio</h2>
-          <p className="text-sm text-slate-600">Glissez les blocs comme sur une toile, puis exportez en PDF.</p>
+    <section className="pdf-studio-container">
+      {/* Control Bar */}
+      <div className="pdf-studio-toolbar">
+        <div className="pdf-studio-toolbar-left">
+          <div className="pdf-studio-icon">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="pdf-studio-title">PDF Studio Pro</h2>
+            <p className="pdf-studio-subtitle">Prévisualisation et export haute qualité</p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <button
-            className={`rounded-full border px-3 py-2 ${showGrid ? "border-brand-900 text-brand-900" : "border-slate-200 text-slate-500"}`}
-            type="button"
-            onClick={() => setShowGrid((prev) => !prev)}
-          >
-            Grille
-          </button>
-          <button
-            className={`rounded-full border px-3 py-2 ${snap ? "border-brand-900 text-brand-900" : "border-slate-200 text-slate-500"}`}
-            type="button"
-            onClick={() => setSnap((prev) => !prev)}
-          >
-            Snap
-          </button>
-          <button className="rounded-full border border-slate-200 px-3 py-2 text-slate-500" type="button" onClick={handleReset}>
-            Reset
-          </button>
-          <button className="rounded-full bg-brand-900 px-4 py-2 text-white" type="button" onClick={handleDownload} disabled={downloading}>
-            {downloading ? "Export..." : "Telecharger PDF"}
+        <div className="pdf-studio-toolbar-right">
+          <div className="pdf-preview-toggle">
+            <button
+              className={`pdf-toggle-btn ${previewMode === "a4" ? "active" : ""}`}
+              onClick={() => setPreviewMode("a4")}
+            >
+              A4
+            </button>
+            <button
+              className={`pdf-toggle-btn ${previewMode === "compact" ? "active" : ""}`}
+              onClick={() => setPreviewMode("compact")}
+            >
+              Compact
+            </button>
+          </div>
+          <button className="pdf-download-btn" onClick={handleDownload} disabled={downloading}>
+            {downloading ? (
+              <>
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Export...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Télécharger PDF</span>
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-6">
+      {/* PDF Preview */}
+      <div className="pdf-preview-wrapper">
         <div
-          ref={boardRef}
-          className={`relative mx-auto aspect-[210/297] w-full max-w-[640px] rounded-2xl border border-slate-200 bg-white shadow-lg ${showGrid ? "pdf-grid" : ""}`}
-          style={{ aspectRatio: "210 / 297" }}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
+          ref={pdfRef}
+          className={`pdf-document ${previewMode === "compact" ? "pdf-compact" : ""}`}
         >
-          {blocks.map((block) => (
-            <div
-              key={block.id}
-              className="pdf-block absolute select-none touch-none rounded-xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-sm"
-              style={{ left: `${block.x}%`, top: `${block.y}%`, width: `${block.w}%`, height: `${block.h}%` }}
-              onPointerDown={(event) => handlePointerDown(block.id, event)}
-            >
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                {block.label}
-              </div>
-              {block.id === "header" && (
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Facture {props.invoiceNumber || "--"}</p>
-                    <p>Date: {props.issueDate || "--"}</p>
-                    <p>Echeance: {props.dueDate || "--"}</p>
-                  </div>
-                  <div className="rounded-full bg-brand-900/10 px-2 py-1 text-[10px] text-brand-900">Draft</div>
+          {/* Decorative Elements */}
+          <div className="pdf-corner-accent pdf-corner-top-left" />
+          <div className="pdf-corner-accent pdf-corner-bottom-right" />
+
+          {/* Watermark for drafts */}
+          {!props.isCertified && (
+            <div className="pdf-watermark">BROUILLON</div>
+          )}
+
+          {/* Header Section */}
+          <header className="pdf-header">
+            <div className="pdf-header-left">
+              <div className="pdf-logo">
+                <div className="pdf-logo-icon">
+                  <svg viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="8" fill="url(#logoGradient)" />
+                    <path d="M12 20h16M12 14h10M12 26h12" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+                    <defs>
+                      <linearGradient id="logoGradient" x1="0" y1="0" x2="40" y2="40">
+                        <stop stopColor="#1e3a5f" />
+                        <stop offset="1" stopColor="#2563eb" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
                 </div>
-              )}
-              {block.id === "issuer" && (
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-800">{props.issuer.name || "Emetteur"}</p>
-                  <p>{props.issuer.address || "Adresse"}</p>
-                  <p>{props.issuer.email || "Email"}</p>
-                  <p>SIRET {props.issuer.siret || "--"}</p>
-                </div>
-              )}
-              {block.id === "client" && (
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-800">{props.client.name || "Client"}</p>
-                  <p>{props.client.address || "Adresse"}</p>
-                  <p>{props.client.email || "Email"}</p>
-                  <p>SIRET {props.client.siret || "--"}</p>
-                </div>
-              )}
-              {block.id === "items" && (
-                <div className="space-y-1">
-                  {itemsPreview.map((item, index) => (
-                    <div key={`${item.description}-${index}`} className="flex items-center justify-between">
-                      <span className="truncate">{item.description || "Ligne"}</span>
-                      <span className="text-[10px] text-slate-500">{item.quantity} x {item.unitPrice}</span>
-                    </div>
-                  ))}
-                  {props.lineItems.length === 0 && <p className="text-slate-400">Aucune ligne</p>}
-                  {props.lineItems.length > itemsPreview.length && (
-                    <p className="text-[10px] text-slate-400">+{props.lineItems.length - itemsPreview.length} lignes</p>
+                <div className="pdf-company-info">
+                  <h1 className="pdf-company-name">{props.issuer.name || "Votre Entreprise"}</h1>
+                  <p className="pdf-company-details">{props.issuer.address || "Adresse de l'entreprise"}</p>
+                  <p className="pdf-company-details">{props.issuer.email || "contact@entreprise.com"}</p>
+                  {props.issuer.siret && (
+                    <p className="pdf-company-siret">SIRET: {props.issuer.siret}</p>
                   )}
                 </div>
+              </div>
+            </div>
+            <div className="pdf-header-right">
+              <div className="pdf-invoice-title">FACTURE</div>
+              <div className="pdf-invoice-number">{props.invoiceNumber || "N° ---"}</div>
+              {statusBadge}
+            </div>
+          </header>
+
+          {/* Info Bar */}
+          <div className="pdf-info-bar">
+            <div className="pdf-info-item">
+              <span className="pdf-info-label">Date d'émission</span>
+              <span className="pdf-info-value">{formatDate(props.issueDate)}</span>
+            </div>
+            <div className="pdf-info-divider" />
+            <div className="pdf-info-item">
+              <span className="pdf-info-label">Date d'échéance</span>
+              <span className="pdf-info-value">{formatDate(props.dueDate)}</span>
+            </div>
+            <div className="pdf-info-divider" />
+            <div className="pdf-info-item">
+              <span className="pdf-info-label">Montant dû</span>
+              <span className="pdf-info-value pdf-info-amount">{formatCurrency(props.totals.ttc)}</span>
+            </div>
+          </div>
+
+          {/* Client Section */}
+          <div className="pdf-client-section">
+            <div className="pdf-section-label">Facturé à</div>
+            <div className="pdf-client-card">
+              <h3 className="pdf-client-name">{props.client.name || "Nom du client"}</h3>
+              <p className="pdf-client-detail">{props.client.address || "Adresse du client"}</p>
+              <p className="pdf-client-detail">{props.client.email || "email@client.com"}</p>
+              {props.client.siret && (
+                <p className="pdf-client-siret">SIRET: {props.client.siret}</p>
               )}
-              {block.id === "totals" && (
-                <div className="space-y-1">
-                  <p className="flex justify-between"><span>Total HT</span><span>{props.totals.ht.toFixed(2)} EUR</span></p>
-                  <p className="flex justify-between"><span>Total TVA</span><span>{props.totals.tva.toFixed(2)} EUR</span></p>
-                  <p className="flex justify-between font-semibold text-slate-800"><span>Total TTC</span><span>{props.totals.ttc.toFixed(2)} EUR</span></p>
+            </div>
+          </div>
+
+          {/* Line Items Table */}
+          <div className="pdf-table-section">
+            <table className="pdf-table">
+              <thead>
+                <tr>
+                  <th className="pdf-th-description">Description</th>
+                  <th className="pdf-th-qty">Qté</th>
+                  <th className="pdf-th-price">Prix unitaire</th>
+                  <th className="pdf-th-vat">TVA</th>
+                  <th className="pdf-th-total">Total HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.lineItems.length > 0 ? (
+                  props.lineItems.map((item, index) => {
+                    const lineTotal = item.quantity * item.unitPrice;
+                    return (
+                      <tr key={`${item.description}-${index}`} className={index % 2 === 0 ? "pdf-row-even" : "pdf-row-odd"}>
+                        <td className="pdf-td-description">{item.description || "Article"}</td>
+                        <td className="pdf-td-qty">{item.quantity}</td>
+                        <td className="pdf-td-price">{formatCurrency(item.unitPrice)}</td>
+                        <td className="pdf-td-vat">{item.vatRate}%</td>
+                        <td className="pdf-td-total">{formatCurrency(lineTotal)}</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="pdf-no-items">Aucun article ajouté</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totals & Footer */}
+          <div className="pdf-footer-section">
+            <div className="pdf-footer-left">
+              {/* QR Code */}
+              <div className="pdf-qr-section">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="QR Code de vérification" className="pdf-qr-image" />
+                ) : (
+                  <div className="pdf-qr-placeholder" />
+                )}
+                <div className="pdf-qr-text">
+                  <span className="pdf-qr-label">Scanner pour vérifier</span>
+                  <span className="pdf-qr-sublabel">Authenticité garantie</span>
                 </div>
-              )}
-              {block.id === "notes" && (
-                <p className="text-slate-500">{props.notes || "Notes / conditions"}</p>
-              )}
-              {block.id === "qr" && (
-                <div className="flex h-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 bg-slate-50">
-                  <div className="h-10 w-10 rounded bg-slate-200" />
-                  <span className="text-[10px] text-slate-400">QR</span>
+              </div>
+
+              {/* Notes */}
+              {props.notes && (
+                <div className="pdf-notes-section">
+                  <div className="pdf-notes-label">Notes & Conditions</div>
+                  <div className="pdf-notes-content">{props.notes}</div>
                 </div>
               )}
             </div>
-          ))}
+
+            <div className="pdf-footer-right">
+              {/* Totals Box */}
+              <div className="pdf-totals-box">
+                <div className="pdf-total-row">
+                  <span>Sous-total HT</span>
+                  <span>{formatCurrency(props.totals.ht)}</span>
+                </div>
+                <div className="pdf-total-row">
+                  <span>TVA</span>
+                  <span>{formatCurrency(props.totals.tva)}</span>
+                </div>
+                <div className="pdf-total-divider" />
+                <div className="pdf-total-row pdf-total-main">
+                  <span>Total TTC</span>
+                  <span>{formatCurrency(props.totals.ttc)}</span>
+                </div>
+              </div>
+
+              {/* Payment Info */}
+              <div className="pdf-payment-info">
+                <div className="pdf-payment-label">Modalités de paiement</div>
+                <div className="pdf-payment-detail">Virement bancaire sous 30 jours</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Certification Footer */}
+          {props.isCertified && props.certificationHash && (
+            <div className="pdf-certification-footer">
+              <div className="pdf-cert-icon">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="pdf-cert-text">
+                Document certifié sur blockchain • Hash: {props.certificationHash.slice(0, 20)}...
+              </div>
+            </div>
+          )}
+
+          {/* Document Footer */}
+          <div className="pdf-document-footer">
+            <div className="pdf-footer-line" />
+            <div className="pdf-footer-text">
+              Facture générée par FactureChain • Document authentique
+            </div>
+          </div>
         </div>
       </div>
     </section>
   );
 }
-
-
-
