@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -7,6 +8,7 @@ import { seedDemoData } from "./db/seed.js";
 import authRoutes from "./routes/auth.js";
 import invoiceRoutes from "./routes/invoices.js";
 import verifyRoutes from "./routes/verify.js";
+import userRoutes from "./routes/users.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
@@ -17,8 +19,20 @@ if (env.seedDemo) {
 }
 
 const app = express();
-app.use(cors());
-app.use(helmet());
+
+// Secure CORS configuration - only allow specified origins
+app.use(cors({
+  origin: env.corsOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+// Security headers with HSTS for production
+app.use(helmet({
+  hsts: env.isProduction ? { maxAge: 31536000, includeSubDomains: true } : false
+}));
+
 app.use(morgan("dev"));
 app.use(express.json({ limit: "5mb" }));
 
@@ -30,6 +44,7 @@ app.use("/api", apiLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/verify", verifyRoutes);
+app.use("/api/users", userRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ message: "Route introuvable" });

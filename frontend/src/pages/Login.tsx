@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 
@@ -25,7 +25,7 @@ export default function Login() {
   return (
     <div className="mx-auto max-w-md px-6 py-16">
       <h1 className="text-2xl font-semibold text-brand-900">{t("loginTitle")}</h1>
-      <p className="mt-2 text-sm text-slate-600">Entrez vos identifiants pour acceder au tableau de bord.</p>
+      <p className="mt-2 text-sm text-slate-600">Entrez vos identifiants pour accéder au tableau de bord.</p>
       <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
         <input
           className="w-full rounded-lg border border-slate-300 px-4 py-3"
@@ -45,9 +45,11 @@ export default function Login() {
         <button className="w-full rounded-lg bg-brand-900 py-3 text-white" type="submit" disabled={loading}>
           {loading ? "Connexion..." : t("navLogin")}
         </button>
-        <button className="w-full rounded-lg border border-slate-300 py-3 text-slate-600" type="button">
-          Mot de passe oublie
-        </button>
+        <div className="text-center">
+          <Link to="/forgot-password" className="text-sm text-brand-600 hover:underline">
+            Mot de passe oublié ?
+          </Link>
+        </div>
       </form>
     </div>
   );

@@ -1,6 +1,6 @@
 # FactureChain Backend (MVP)
 
-Lightweight Express API (TypeScript) backed by PostgreSQL. Covers auth, invoices, certification, and verification flows.
+Lightweight Express API (TypeScript) backed by PostgreSQL. Covers auth, user management, invoices, certification, and verification flows.
 
 ## Quick start
 
@@ -32,45 +32,105 @@ Seed user (optional): set `SEED_DEMO=true` to auto-create `demo@facturechain.com
 
 ## Environment variables
 
-- `PORT` (default `4000`)
-- `JWT_SECRET` (default `dev-secret-change-me`)
-- `JWT_EXPIRES_IN` (default `24h`)
-- `APP_URL` (default `https://facturechain.com`)
-- `DATABASE_URL` (required)
-- `DATABASE_SSL` (`true` or `false`, default `false`)
-- `SEED_DEMO` (`true` or `false`, default `false`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `4000` | Server port |
+| `JWT_SECRET` | `dev-secret-change-me` | JWT signing secret (required in production) |
+| `JWT_EXPIRES_IN` | `24h` | Token expiration |
+| `APP_URL` | `https://facturechain.com` | Application URL |
+| `DATABASE_URL` | - | PostgreSQL connection string (required) |
+| `DATABASE_SSL` | `false` | Enable SSL for database connection |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed CORS origins (comma-separated) |
+| `SEED_DEMO` | `false` | Auto-create demo user on startup |
 
-## API surface
+## API Endpoints
 
-- `POST /api/auth/register` - create account
-- `POST /api/auth/login` - login, returns JWT + user
-- `POST /api/auth/forgot-password` - request reset (no email, just acknowledged)
-- `POST /api/auth/reset-password` - set new password
-- `GET /api/invoices` - list user invoices (requires bearer token)
-- `POST /api/invoices` - create draft invoice (requires bearer token)
-- `GET /api/invoices/:id` - invoice detail + certification (requires bearer token)
-- `PUT /api/invoices/:id` - update draft (requires bearer token)
-- `DELETE /api/invoices/:id` - delete invoice (requires bearer token)
-- `POST /api/invoices/:id/certify` - hash + mock certify on Polygon (requires bearer token)
-- `GET /api/invoices/:id/download` - not implemented placeholder
-- `GET /api/verify/:hash` - public hash verification (`0x` optional)
-- `POST /api/verify/upload` - public PDF upload verification (form-data `file`, max 5 MB)
+### Authentication (`/api/auth`)
 
-## Architecture notes
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/register` | ✗ | Create account |
+| POST | `/login` | ✗ | Login, returns JWT + user |
+| POST | `/forgot-password` | ✗ | Request password reset |
+| POST | `/reset-password` | ✗ | Set new password |
 
-- `sql/schema.sql`: Postgres schema for all tables.
-- `src/db/pool.ts`: database connection.
-- `src/db/mapper.ts`: row-to-model mapping and date normalization.
-- `src/db/seed.ts`: optional demo seed.
-- `src/services/*`: business logic (auth, invoices, certification, verification).
-- `src/middleware/*`: auth guard (JWT), rate limits, error handler.
-- `src/routes/*`: HTTP layer with Zod validation and multer for PDF uploads.
-- `src/utils/crypto.ts`: SHA-256 hashing for invoice objects or uploaded binaries.
-- `src/types/*`: shared TypeScript model definitions.
+### User Management (`/api/users`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/me` | ✓ | Get current user profile |
+| PUT | `/me` | ✓ | Update user profile |
+| POST | `/me/password` | ✓ | Change password |
+| DELETE | `/me` | ✓ | Delete account (cascades invoices) |
+
+### Invoices (`/api/invoices`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/` | ✓ | List invoices (paginated, searchable) |
+| POST | `/` | ✓ | Create draft invoice |
+| GET | `/:id` | ✓ | Invoice detail + certification |
+| PUT | `/:id` | ✓ | Update draft |
+| DELETE | `/:id` | ✓ | Delete invoice |
+| POST | `/:id/certify` | ✓ | Hash + mock certify on Polygon |
+| POST | `/:id/duplicate` | ✓ | Clone invoice as new draft |
+| GET | `/:id/download` | ✓ | Download PDF (not implemented) |
+
+#### Query Parameters for GET `/api/invoices`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | number | 1 | Page number |
+| `limit` | number | 20 | Items per page (max: 100) |
+| `search` | string | - | Search by invoice number or client name |
+| `status` | string | - | Filter by `draft` or `certified` |
+
+### Public Verification (`/api/verify`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/:hash` | ✗ | Verify by hash (`0x` prefix optional) |
+| POST | `/upload` | ✗ | Verify by PDF upload (form-data `file`, max 5 MB) |
+
+## Project Structure
+
+```
+src/
+├── config/
+│   └── env.ts           # Environment configuration
+├── db/
+│   ├── pool.ts          # Database connection
+│   ├── mapper.ts        # Row-to-model mapping
+│   └── seed.ts          # Demo data seeding
+├── middleware/
+│   ├── auth.ts          # JWT authentication guard
+│   ├── errorHandler.ts  # Global error handler
+│   └── rateLimiter.ts   # Rate limiting
+├── routes/
+│   ├── auth.ts          # Auth endpoints
+│   ├── invoices.ts      # Invoice endpoints
+│   ├── users.ts         # User profile endpoints
+│   └── verify.ts        # Public verification
+├── services/
+│   ├── authService.ts   # Auth business logic
+│   ├── invoiceService.ts# Invoice CRUD + certification
+│   ├── userService.ts   # User profile management
+│   └── verificationService.ts # Hash verification
+├── types/
+│   ├── errors.ts        # Error types
+│   └── models.ts        # Data models
+├── utils/
+│   ├── crypto.ts        # SHA-256 hashing
+│   └── responses.ts     # Response helpers
+└── index.ts             # App entry point
+```
 
 ## Next steps for production
 
-- Add migrations tooling (e.g., Prisma Migrate, Knex, or Flyway).
-- Wire real PDF generation and S3 storage; stream files from `/api/invoices/:id/download`.
-- Call Polygon via `ethers.js` with the provided smart contract, persisting tx hash/block.
-- Add email delivery for password reset flow.
+- [ ] Add migrations tooling (Prisma Migrate, Knex, or Flyway)
+- [ ] Implement real PDF generation with S3 storage
+- [ ] Integrate Polygon via `ethers.js` for blockchain certification
+- [ ] Add email delivery (SendGrid/Mailgun) for password reset
+- [ ] Add refresh token mechanism
+- [ ] Add audit logging for sensitive operations
+- [ ] Add two-factor authentication (2FA)

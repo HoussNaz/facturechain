@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import StatusPill from "../components/StatusPill";
 import ProofGlyph from "../components/ProofGlyph";
 import TrustTimeline from "../components/TrustTimeline";
@@ -16,6 +16,7 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!token || !id) return;
@@ -41,34 +42,40 @@ export default function InvoiceDetail() {
     };
   }, [token, id]);
 
+  type TimelineStatus = "done" | "active" | "pending";
+
   const timelineSteps = useMemo(() => {
     if (!invoice) return [];
     const isCertified = invoice.status === "certified";
     const verifiedCount = certification?.verificationCount || 0;
+
+    const getStatus = (certified: boolean, pendingStatus: TimelineStatus = "pending"): TimelineStatus =>
+      certified ? "done" : pendingStatus;
+
     return [
       {
         id: "draft",
         title: "Brouillon",
         caption: invoice.createdAt?.slice(0, 10) || "--",
-        status: "done"
+        status: "done" as TimelineStatus
       },
       {
         id: "certify",
         title: "Certification",
         caption: isCertified ? certification?.certifiedAt?.slice(0, 10) || "--" : "En attente",
-        status: isCertified ? "done" : "active"
+        status: getStatus(isCertified, "active")
       },
       {
         id: "verify",
-        title: "Verifs",
-        caption: isCertified ? `${verifiedCount} verif(s)` : "0 verif",
-        status: isCertified ? (verifiedCount > 0 ? "done" : "active") : "pending"
+        title: "Vérifs",
+        caption: isCertified ? `${verifiedCount} vérif(s)` : "0 vérif",
+        status: isCertified ? (verifiedCount > 0 ? "done" : "active") as TimelineStatus : "pending" as TimelineStatus
       },
       {
         id: "share",
         title: "Partage",
         caption: isCertified ? "Lien public actif" : "Lien indisponible",
-        status: isCertified ? "done" : "pending"
+        status: getStatus(isCertified)
       }
     ];
   }, [invoice, certification]);
@@ -80,10 +87,18 @@ export default function InvoiceDetail() {
       const data = await apiFetch<{ invoice: Invoice; certification: Certification }>(`/api/invoices/${id}/certify`, { method: "POST", token });
       setInvoice(data.invoice);
       setCertification(data.certification);
-      setActionMessage("Facture certifiee");
+      setActionMessage("Facture certifiée");
     } catch (err: any) {
       setActionMessage(err?.message || "Certification impossible");
     }
+  };
+
+  const handleCopyVerificationUrl = () => {
+    if (!certification?.pdfHash) return;
+    const url = `${window.location.origin}/verify/${certification.pdfHash}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (!token) {
@@ -94,6 +109,8 @@ export default function InvoiceDetail() {
     );
   }
 
+  const isCertified = invoice?.status === "certified";
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
       <div className="flex flex-wrap items-start justify-between gap-6">
@@ -102,12 +119,31 @@ export default function InvoiceDetail() {
           <p className="text-sm text-slate-600">Client: {invoice?.clientCompanyName || "--"}</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <button className="rounded-full border border-brand-900 px-5 py-3 text-sm text-brand-900" type="button">
-            Telecharger PDF
+          {!isCertified && (
+            <Link
+              to={`/invoices/${id}/edit`}
+              className="rounded-full border border-slate-300 px-5 py-3 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Modifier
+            </Link>
+          )}
+          <button className="rounded-full border border-brand-900 px-5 py-3 text-sm text-brand-900 transition-colors hover:bg-brand-50" type="button">
+            Télécharger PDF
           </button>
-          <button className="rounded-full bg-emerald-600 px-5 py-3 text-sm text-white" type="button" onClick={handleCertify}>
-            Certifier
-          </button>
+          {isCertified && certification && (
+            <button
+              className="rounded-full border border-emerald-600 px-5 py-3 text-sm text-emerald-600 transition-colors hover:bg-emerald-50"
+              type="button"
+              onClick={handleCopyVerificationUrl}
+            >
+              {copied ? "Lien copié ✓" : "Copier lien de vérification"}
+            </button>
+          )}
+          {!isCertified && (
+            <button className="rounded-full bg-emerald-600 px-5 py-3 text-sm text-white transition-colors hover:bg-emerald-700" type="button" onClick={handleCertify}>
+              Certifier
+            </button>
+          )}
         </div>
       </div>
 

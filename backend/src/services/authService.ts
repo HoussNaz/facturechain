@@ -19,8 +19,10 @@ const publicUser = (user: User): PublicUser => ({
   updatedAt: user.updatedAt
 });
 
-function issueToken(userId: string) {
-  return jwt.sign({ sub: userId }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+function issueToken(userId: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const options: jwt.SignOptions = { expiresIn: env.jwtExpiresIn as any };
+  return jwt.sign({ sub: userId }, env.jwtSecret, options);
 }
 
 type RegisterPayload = {

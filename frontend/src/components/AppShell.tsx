@@ -50,15 +50,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <LanguageToggle />
             {user ? (
               <div className="flex items-center gap-2">
-                <span className="hidden text-xs text-slate-500 sm:block">
+                <NavLink
+                  to="/profile"
+                  className={({ isActive }) =>
+                    `hidden text-sm sm:block ${isActive ? "text-brand-900 font-medium" : "text-slate-500 hover:text-brand-600"}`
+                  }
+                >
                   {user.companyName || user.email}
-                </span>
+                </NavLink>
                 <button
-                  className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-600"
+                  className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
                   type="button"
                   onClick={logout}
                 >
-                  Deconnexion
+                  Déconnexion
                 </button>
               </div>
             ) : (

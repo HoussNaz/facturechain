@@ -58,3 +58,16 @@ create table if not exists verification_logs (
 );
 
 create index if not exists verification_logs_cert_id_idx on verification_logs(certification_id);
+
+-- Password reset tokens for secure password recovery
+create table if not exists password_reset_tokens (
+  id uuid primary key,
+  user_id uuid references users(id) on delete cascade,
+  token_hash varchar(64) not null,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null
+);
+
+create index if not exists password_reset_tokens_user_id_idx on password_reset_tokens(user_id);
+create index if not exists password_reset_tokens_hash_idx on password_reset_tokens(token_hash);

@@ -33,9 +33,50 @@ type InvoicePayload = {
   notes?: string;
 };
 
-export async function listInvoices(userId: string) {
-  const result = await pool.query("select * from invoices where user_id = $1 order by created_at desc", [userId]);
-  return result.rows.map(mapInvoice);
+type ListOptions = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+};
+
+export async function listInvoices(userId: string, options: ListOptions = {}) {
+  const { page = 1, limit = 20, search = "", status = "" } = options;
+  const offset = (page - 1) * limit;
+
+  let whereClause = "WHERE user_id = $1";
+  const params: any[] = [userId];
+  let paramIndex = 2;
+
+  if (search) {
+    whereClause += ` AND (invoice_number ILIKE $${paramIndex} OR client_company_name ILIKE $${paramIndex})`;
+    params.push(`%${search}%`);
+    paramIndex++;
+  }
+
+  if (status) {
+    whereClause += ` AND status = $${paramIndex}`;
+    params.push(status);
+    paramIndex++;
+  }
+
+  // Get total count
+  const countResult = await pool.query(
+    `SELECT COUNT(*) as count FROM invoices ${whereClause}`,
+    params
+  );
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  // Get paginated results
+  const result = await pool.query(
+    `SELECT * FROM invoices ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+    [...params, limit, offset]
+  );
+
+  return {
+    invoices: result.rows.map(mapInvoice),
+    total
+  };
 }
 
 export async function getInvoice(userId: string, invoiceId: string) {

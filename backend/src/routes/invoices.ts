@@ -40,14 +40,28 @@ router.use(authRequired);
 router.get("/", async (req, res, next) => {
   try {
     const user = req.user as User;
-    const invoices = await listInvoices(user.id);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const search = (req.query.search as string)?.trim() || "";
+    const status = (req.query.status as string)?.trim() || "";
+
+    const { invoices, total } = await listInvoices(user.id, { page, limit, search, status });
     const certifications = await listCertificationsByInvoiceIds(invoices.map((inv) => inv.id));
     const certMap = new Map(certifications.map((cert) => [cert.invoiceId, cert]));
     const enriched = invoices.map((inv) => ({
       ...inv,
       certification: certMap.get(inv.id) || null
     }));
-    return ok(res, { invoices: enriched });
+
+    return ok(res, {
+      invoices: enriched,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -108,6 +122,31 @@ router.post("/:id/certify", async (req, res, next) => {
 
 router.get("/:id/download", (_req, res) => {
   return notFound(res, "Generation de PDF non integree dans ce MVP");
+});
+
+// Duplicate an invoice
+router.post("/:id/duplicate", async (req, res, next) => {
+  try {
+    const user = req.user as User;
+    const original = await getInvoice(user.id, req.params.id);
+
+    // Create a new invoice with the same data but new ID and as draft
+    const duplicated = await createInvoice(user.id, {
+      invoiceNumber: `${original.invoiceNumber}-COPIE`,
+      issueDate: new Date().toISOString().slice(0, 10),
+      dueDate: original.dueDate,
+      clientCompanyName: original.clientCompanyName || undefined,
+      clientSiret: original.clientSiret || undefined,
+      clientAddress: original.clientAddress || undefined,
+      clientEmail: original.clientEmail || undefined,
+      lineItems: original.lineItems,
+      notes: original.notes || undefined
+    });
+
+    return created(res, { invoice: duplicated });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

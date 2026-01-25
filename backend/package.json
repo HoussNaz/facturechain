@@ -11,12 +11,14 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1",\n    "pg": "^8.11.5",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.5",
     "uuid": "^9.0.1",
     "zod": "^3.23.8"
   },
@@ -27,9 +29,10 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.12",
-    "@types/node": "^20.11.30",\n    "@types/pg": "^8.11.6",
-    "typescript": "^5.3.3",
-    "tsx": "^4.7.2"
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.11.6",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.7.2",
+    "typescript": "^5.3.3"
   }
 }
-
